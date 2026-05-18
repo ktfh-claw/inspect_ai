@@ -148,6 +148,25 @@ def test_read_sample_with_exclude_fields():
     assert not sample.events
 
 
+def test_read_log_with_exclude_fields():
+    eval_log_file = os.path.join(
+        "tests", "log", "test_eval_log", "log_read_sample.eval"
+    )
+    log = read_eval_log(eval_log_file, exclude_fields={"events"})
+    assert log.samples is not None
+    assert len(log.samples) > 0
+    assert not log.samples[0].events
+
+
+def test_read_log_bytes_exclude_fields_unsupported():
+    eval_log_file = os.path.join(
+        "tests", "log", "test_eval_log", "log_read_sample.eval"
+    )
+    with open(eval_log_file, "rb") as f:
+        with pytest.raises(ValueError, match="exclude_fields is not supported"):
+            read_eval_log(f, exclude_fields={"events"})
+
+
 def test_log_location():
     json_log_file = os.path.join("tests", "log", "test_eval_log", "log_formats.json")
     check_log_location(json_log_file)

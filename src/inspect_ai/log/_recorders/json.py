@@ -161,7 +161,9 @@ class JSONRecorder(FileRecorder):
         cls,
         location: str,
         header_only: bool = False,
+        exclude_fields: set[str] | None = None,
     ) -> EvalLog:
+        del exclude_fields
         fs = filesystem(location)
 
         if header_only:
