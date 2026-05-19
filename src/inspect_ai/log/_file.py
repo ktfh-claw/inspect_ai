@@ -332,6 +332,7 @@ async def read_eval_log_async(
     Returns:
        EvalLog object read from file.
     """
+    effective_exclude_fields: set[str] | None = None
     is_bytes = not isinstance(log_file, (str, Path, EvalLogInfo))
     if is_bytes:
         if exclude_fields:
@@ -362,12 +363,19 @@ async def read_eval_log_async(
             recorder_type = recorder_type_for_location(log_file)
         else:
             recorder_type = recorder_type_for_format(format)
-        exclude_fields = _normalize_exclude_fields(exclude_fields)
-        log = await recorder_type.read_log(log_file, header_only, exclude_fields)
+        if format == "eval" or (
+            format == "auto" and recorder_type is recorder_type_for_format("eval")
+        ):
+            effective_exclude_fields = _normalize_exclude_fields(exclude_fields)
+        log = await recorder_type.read_log(
+            log_file, header_only, effective_exclude_fields
+        )
 
     if log.samples:
         log.samples = [
-            _resolve_sample_for_read(sample, resolve_attachments, exclude_fields)
+            _resolve_sample_for_read(
+                sample, resolve_attachments, effective_exclude_fields
+            )
             for sample in log.samples
         ]
 
@@ -536,13 +544,12 @@ async def read_eval_log_sample_async(
         recorder_type = recorder_type_for_location(log_file)
     else:
         recorder_type = recorder_type_for_format(format)
-    if exclude_fields:
-        if "events" not in exclude_fields:
-            # events_data is needed to resolve refs in events
-            exclude_fields = exclude_fields - {"events_data"}
-        else:
-            # no events means events_data is useless
-            exclude_fields = exclude_fields | {"events_data"}
+    if format == "eval" or (
+        format == "auto" and recorder_type is recorder_type_for_format("eval")
+    ):
+        exclude_fields = _normalize_exclude_fields(exclude_fields)
+    else:
+        exclude_fields = None
 
     sample = await recorder_type.read_log_sample(
         log_file, id, epoch, uuid, exclude_fields, reader
