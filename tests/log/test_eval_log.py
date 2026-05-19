@@ -11,6 +11,7 @@ from test_helpers.utils import skip_if_trio
 from typing_extensions import override
 
 from inspect_ai import Task, eval
+from inspect_ai._util._async import run_coroutine
 from inspect_ai._util.constants import get_deserializing_context
 from inspect_ai._util.content import ContentDocument
 from inspect_ai._util.file import FileInfo, filesystem
@@ -512,6 +513,73 @@ def test_read_eval_log_full_trio():
         assert len(log.samples) > 0
 
     anyio.run(main, backend="trio")
+
+
+def test_read_eval_log_async_with_exclude_fields():
+    """Test exclude_fields on full .eval reads works through read_eval_log_async."""
+    from inspect_ai.log._file import read_eval_log_async
+
+    eval_log_file = os.path.join(
+        "tests", "log", "test_eval_log", "log_read_sample.eval"
+    )
+
+    log = run_coroutine(
+        read_eval_log_async(eval_log_file, exclude_fields={"events", "messages"})
+    )
+
+    assert log.samples is not None
+    assert len(log.samples) > 0
+    assert log.samples[0].events == []
+    assert log.samples[0].messages == []
+
+
+def test_read_eval_log_async_non_eval_ignores_exclude_fields(monkeypatch: pytest.MonkeyPatch):
+    """Non-.eval async reads should not forward exclude_fields to recorders or resolvers."""
+    from inspect_ai.log import _file as log_file_module
+
+    eval_log_file = os.path.join(
+        "tests", "log", "test_eval_log", "log_read_sample.eval"
+    )
+    observed: dict[str, set[str] | None] = {}
+
+    class FakeRecorder:
+        async def read_log(
+            self,
+            log_file: str,
+            header_only: bool,
+            exclude_fields: set[str] | None,
+        ) -> EvalLog:
+            observed["recorder"] = exclude_fields
+            return read_eval_log(eval_log_file)
+
+    def fake_resolve_sample_for_read(
+        sample: EvalSample,
+        resolve_attachments: bool | Literal["full", "core"],
+        exclude_fields: set[str] | None = None,
+    ) -> EvalSample:
+        observed["resolver"] = exclude_fields
+        return sample
+
+    monkeypatch.setattr(
+        log_file_module,
+        "recorder_type_for_format",
+        lambda format: FakeRecorder() if format == "json" else None,
+    )
+    monkeypatch.setattr(
+        log_file_module,
+        "_resolve_sample_for_read",
+        fake_resolve_sample_for_read,
+    )
+
+    log = run_coroutine(
+        log_file_module.read_eval_log_async(
+            "dummy.json", format="json", exclude_fields={"events", "messages"}
+        )
+    )
+
+    assert log.samples is not None
+    assert observed["recorder"] is None
+    assert observed["resolver"] is None
 
 
 def test_read_eval_log_sample_trio():

@@ -8,6 +8,7 @@ from typing import Literal
 import pytest
 from pydantic import JsonValue
 
+from inspect_ai._util._async import run_coroutine
 from inspect_ai._util.constants import LOG_SCHEMA_VERSION
 from inspect_ai._util.content import ContentReasoning, ContentText
 from inspect_ai.event import Event, Timeline, TimelineEvent, TimelineSpan
@@ -650,6 +651,41 @@ def test_json_read_ignores_exclude_fields():
         read_log = read_eval_log(path, format="json", exclude_fields={"events"})
         read_sample = read_eval_log_sample(
             path, id="test", format="json", exclude_fields={"events"}
+        )
+
+        assert read_log.samples is not None
+        log_events = [
+            e for e in read_log.samples[0].events if isinstance(e, ModelEvent)
+        ]
+        sample_events = [e for e in read_sample.events if isinstance(e, ModelEvent)]
+        assert read_log.samples[0].events_data is None
+        assert read_sample.events_data is None
+        assert len(log_events[0].call.request["messages"]) == 1
+        assert len(log_events[1].call.request["messages"]) == 3
+        assert len(sample_events[0].call.request["messages"]) == 1
+        assert len(sample_events[1].call.request["messages"]) == 3
+
+
+def test_json_async_read_ignores_exclude_fields():
+    """Async .json reads should also ignore exclude_fields and fully resolve pooled data."""
+    from inspect_ai.log._file import read_eval_log_async, read_eval_log_sample_async
+
+    sample = _make_sample_with_call_messages()
+    condensed = condense_sample(sample)
+    log = _make_eval_log_with_model_events()
+    log.samples = [condensed]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "test.json")
+        write_eval_log(log, path, format="json")
+
+        read_log = run_coroutine(
+            read_eval_log_async(path, format="json", exclude_fields={"events"})
+        )
+        read_sample = run_coroutine(
+            read_eval_log_sample_async(
+                path, id="test", format="json", exclude_fields={"events"}
+            )
         )
 
         assert read_log.samples is not None
